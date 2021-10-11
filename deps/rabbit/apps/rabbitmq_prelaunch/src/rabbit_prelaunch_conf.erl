@@ -13,7 +13,9 @@
          decrypt_config/1]).
 
 -ifdef(TEST).
--export([decrypt_config/2]).
+-export([decrypt_config/2,
+         inet_tls_enabled/1,
+         osiris_replication_over_tls_configuration/1]).
 -endif.
 
 setup(Context) ->
@@ -89,7 +91,7 @@ get_config_state() ->
 set_default_config() ->
     ?LOG_DEBUG("Setting default config",
                #{domain => ?RMQLOG_DOMAIN_PRELAUNCH}),
-    Config = [
+    Config0 = [
               {ra,
                [
                 {wal_max_size_bytes, 536870912}, %% 5 * 2 ^ 20
@@ -115,7 +117,59 @@ set_default_config() ->
                 {busy_port, false},
                 {busy_dist_port, true}]}
              ],
+    Config = Config0 ++ maybe_configure_osiris_replication_over_tls(),
     apply_erlang_term_based_config(Config).
+
+maybe_configure_osiris_replication_over_tls() ->
+    case inet_tls_enabled(init:get_arguments()) of
+        true ->
+            ?LOG_DEBUG("Inter-node TLS enabled, configuring stream replication over TLS", 
+                #{domain => ?RMQLOG_DOMAIN_PRELAUNCH}),
+            osiris_replication_over_tls_configuration(init:get_arguments());
+        false ->
+            ?LOG_DEBUG("Inter-node TLS not enabled", #{domain => ?RMQLOG_DOMAIN_PRELAUNCH}),
+            []
+        end.
+
+osiris_replication_over_tls_configuration(InitArgs) ->
+    case proplists:lookup(ssl_dist_optfile, InitArgs) of
+        none ->
+            % TODO extract ssl_dist_opt arguments
+            [];
+        {ssl_dist_optfile, [OptFile]} ->
+            case file:consult(OptFile) of
+                {ok, [[{server, SslHandshakeOptions}, {client, SslConnectOptions}]]} ->
+                    [
+                        {osiris, [
+                            {replication_transport, ssl},
+                            {replication_server_ssl_options, SslHandshakeOptions},
+                            {replication_client_ssl_options, SslConnectOptions}
+                        ]}
+                    ];
+                {error, Error} ->
+                    ?LOG_WARNING("Error while reading TLS distributon option file ~s: ~p", 
+                    [OptFile, Error], #{domain => ?RMQLOG_DOMAIN_PRELAUNCH}),
+                    ?LOG_WARNING("Stream replication over TLS will NOT be enabled", #{domain => ?RMQLOG_DOMAIN_PRELAUNCH}),
+                    [];
+                R ->
+                    ?LOG_WARNING("Unexpected result while reading TLS distributon option file ~s: ~p", 
+                    [OptFile, R], #{domain => ?RMQLOG_DOMAIN_PRELAUNCH}),
+                    ?LOG_WARNING("Stream replication over TLS will NOT be enabled", #{domain => ?RMQLOG_DOMAIN_PRELAUNCH}),
+                    []
+            end
+    end.
+
+
+
+
+inet_tls_enabled([]) ->
+    false;
+inet_tls_enabled([{proto_dist,["inet_tls"]} | _]) ->
+    true;
+inet_tls_enabled([_ | T]) ->
+    inet_tls_enabled(T);
+inet_tls_enabled(_) ->
+    false.
 
 find_actual_main_config_file(#{main_config_file := File}) ->
     case filelib:is_regular(File) of
