@@ -957,7 +957,9 @@ amqp10_session_event(Evt) ->
 socket_send(Sock, Data) ->
     case socket_send0(Sock, Data) of
         ok -> ok;
-        {error, Reason} -> exit({socket_closed, Reason})
+        {error, _Reason} ->
+            throw({stop, normal})
+            %%hxit({socket_closed, Reason})
     end.
 
 -dialyzer({no_fail_call, socket_send0/2}).
