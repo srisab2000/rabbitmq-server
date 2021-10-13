@@ -369,6 +369,7 @@ package-rpm-redhat package-rpm-fedora package-rpm-rhel6 package-rpm-rhel7 \
 package-rpm-rhel8 package-rpm-suse package-rpm-opensuse package-rpm-sles11 \
 package-windows
 
+RABBITMQ_PACKAGING_REPO = $(abspath rabbitmq-packaging)
 ifneq ($(filter $(RABBITMQ_PACKAGING_TARGETS),$(MAKECMDGOALS)),)
 ifeq ($(RABBITMQ_PACKAGING_REPO),)
 $(error Cannot find rabbitmq-packaging repository dir; please clone from rabbitmq/rabbitmq-packaging and specify RABBITMQ_PACKAGING_REPO)
